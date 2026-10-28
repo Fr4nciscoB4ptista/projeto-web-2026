@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <link rel="stylesheet" href="tailwind.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css" />
+    <title>CineStream</title>
+
+</head>
+<body class="bg-slate-950 text-white">
+
+
+    <!------- Cabeçalho ------->
+    <header class="flex items-center justify-between p-6 bg-transparent border-b border-gray-800">
+        <h1 class="text-2xl font-bold">CineStream</h1>
+        <nav>
+            <ul class="flex gap-8 text-sm">
+                <li><a href="#" class="hover:text-gray-400">Explorar</a></li>
+                <li><a href="#" class="hover:text-gray-400">Surpreende-me</a></li>
+                <li><a href="#" class="hover:text-gray-400">Minha Lista</a></li>
+            </ul>
+        </nav>
+        <div class="flex gap-4 items-center">
+            <span>🔍</span> <!-- Ícone de pesquisa básico -->
+            <div class="w-8 h-8 bg-blue-900 rounded border border-blue-500"></div> <!-- Avatar Placeholder -->
+        </div>
+    </header>
+
+    <!------- Conteúdo Principal ------->
+   <main class="py-10 overflow-hidden">
+    
+        <!-- Secção Tendências -->
+        <div class="mb-16">
+            <h2 class="text-center text-xl italic mb-6">Tendencias</h2>
+            
+            <!-- Estrutura do Swiper -->
+            <div class="swiper swiper-tendencias w-full pt-12 pb-12">
+                <div class="swiper-wrapper" id="carrosel-tendencias">
+                    <!-- O JavaScript vai injetar os filmes aqui -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Secção Ação (Fica a estrutura preparada para outra chamada à API) -->
+        <div class="mb-16 pl-6"> <!-- pl-6 para dar um espaçamento à esquerda -->
+            <h2 class="text-xl font-bold mb-4">Ação</h2>
+            
+            <div class="swiper swiper-acao w-full py-4 overflow-visible">
+                <div class="swiper-wrapper" id="carrosel-acao">
+                    <!-- Os filmes de ação vão aparecer aqui -->
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!------- Rodapé ------->
+    <footer>
+
+    </footer> 
+
+
+
+
+
+    <!------- Carroçel de filmes ------->
+
+    <script src="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js"></script>
+    <!------- API ------->
+    <script>
+        const apiKey = '053d489831c6eefd525cc9bc4ba2bb19'; 
+
+        // --- CARROSSEL DE tendenciasx ---
+        const urltendencias = `https://api.themoviedb.org/3/movie/popular?api_key=${apiKey}&language=pt-PT&page=1`;
+
+        fetch(urltendencias)
+            .then(resposta => resposta.json())
+            .then(dados => {
+                const contentor = document.getElementById('carrosel-tendencias');
+                const filmes = dados.results.slice(0, 10); // Vamos usar 10 filmes
+
+                filmes.forEach(filme => {
+                    const imagem = `https://image.tmdb.org/t/p/w780${filme.backdrop_path}`;
+                    
+                    // Extrair apenas o ano da data de lançamento
+                    const ano = filme.release_date ? filme.release_date.split('-')[0] : 'N/A';
+                    
+                    // Formatar a nota para ter apenas 1 casa decimal (ex: 8.5)
+                    const nota = filme.vote_average.toFixed(1);
+
+                    const cartao = `
+                        <div class="swiper-slide relative overflow-hidden rounded-xl shadow-2xl border border-gray-700" style="width: 600px; max-width: 85vw;">
+                            <img src="${imagem}" alt="${filme.title}" class="w-full h-auto object-cover block">
+                            
+                            <!-- Caixa de Informação com Degradê -->
+                            <div class="absolute bottom-0 left-0 w-full p-4 md:p-6 bg-gradient-to-t from-black/95 via-black/70 to-transparent flex flex-col justify-end">
+                                <h3 class="text-white text-lg md:text-2xl font-bold truncate drop-shadow-md">${filme.title}</h3>
+                                
+                                <div class="flex items-center gap-3 mt-1 text-xs md:text-sm text-gray-300">
+                                    <span class="flex items-center gap-1 font-semibold text-yellow-400">
+                                        ⭐ ${nota}
+                                    </span>
+                                    <span>•</span>
+                                    <span>${ano}</span>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    contentor.innerHTML += cartao;
+                });
+
+                // --- INICIALIZAR O EFEITO 3D DO SWIPER ---
+                new Swiper('.swiper-tendencias', {
+                    effect: 'coverflow',
+                        grabCursor: true,
+                        centeredSlides: true,
+                        slidesPerView: 'auto',
+                        loop: true,
+                        coverflowEffect: {
+                            rotate: 30,       // Ângulo de inclinação (reduzido para ficar mais reto, como no teu desenho)
+                            stretch: 250,     // A MAGIA ESTÁ AQUI: Valores positivos puxam os cartões laterais para o centro, sobrepondo-os!
+                            depth: 250,       // Empurra os cartões laterais mais para trás (aumenta o efeito 3D)
+                            modifier: 1,      // Multiplicador do efeito
+                            slideShadows: true, // Mantém o sombreado realista entre eles
+                    }
+                });
+            })
+            .catch(erro => console.error('Erro ao carregar a API:', erro));
+        
+        // --- CARROSSEL DE AÇÃO ---
+        const urlAcao = `https://api.themoviedb.org/3/discover/movie?api_key=${apiKey}&language=pt-PT&with_genres=28&page=1`;
+
+        fetch(urlAcao)
+            .then(resposta => resposta.json())
+            .then(dados => {
+                const contentorAcao = document.getElementById('carrosel-acao');
+                const filmesAcao = dados.results;
+
+                filmesAcao.forEach(filme => {
+                    // Ignorar filmes que não tenham cartaz
+                    if (!filme.poster_path) return; 
+
+                    // Voltar a usar o poster_path para cartazes na vertical
+                    const imagem = `https://image.tmdb.org/t/p/w500${filme.poster_path}`;
+                    
+                    // Largura fixa responsiva e efeito hover scale (aumenta ao passar o rato)
+                    const cartao = `
+                        <div class="swiper-slide transition-transform hover:scale-105 cursor-pointer" style="width: 200px;;">
+                            <img src="${imagem}" alt="${filme.title}" class="w-full h-auto rounded-lg shadow-md border border-gray-800">
+                            <h3 class="mt-2 text-sm text-gray-200 font-medium truncate">${filme.title}</h3>
+                        </div>
+                    `;
+                    contentorAcao.innerHTML += cartao;
+                });
+
+                // Inicializar o carrossel normal
+                new Swiper('.swiper-acao', {
+                    slidesPerView: 'auto', // A quantidade de filmes na fila adapta-se ao ecrã
+                    spaceBetween: 20, // Espaçamento entre os cartazes
+                    grabCursor: true, // Mostra a mãozinha a agarrar
+                    freeMode: true, // Permite deslizar de forma fluida sem prender num cartão específico (estilo Netflix)
+                });
+            })
+            .catch(erro => console.error('Erro ao carregar Ação:', erro));
+
+    </script>
+</body>
+</html>
