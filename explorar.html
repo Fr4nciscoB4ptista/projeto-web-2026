@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="pt-PT">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Pesquisa filmes, filtra por género e ordena-os como quiseres no CineStream.">
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <title>Explorar | CineStream</title>
+</head>
+<body class="bg-slate-950 text-white min-h-screen">
+
+    <!------- Cabeçalho ------->
+    <header class="flex flex-wrap items-center justify-between gap-y-3 p-4 sm:p-6 bg-transparent border-b border-gray-800">
+        <a href="paginaprincipal.html" class="text-xl sm:text-2xl font-bold">CineStream</a>
+        <!-- No telemóvel o menu passa para uma segunda linha (order-last + w-full) -->
+        <nav aria-label="Navegação principal" class="order-last w-full sm:order-0 sm:w-auto">
+            <ul class="flex justify-around sm:justify-start sm:gap-8 text-sm">
+                <li><a href="explorar.html" aria-current="page" class="block py-1 text-blue-400 font-semibold">Explorar</a></li>
+                <li><a href="surpreende.html" class="block py-1 hover:text-gray-400">Surpreende-me</a></li>
+                <li><a href="minhalista.html" class="block py-1 hover:text-gray-400">Minha Lista</a></li>
+            </ul>
+        </nav>
+        <div class="flex gap-4 items-center">
+            <div class="w-8 h-8 bg-blue-900 rounded border border-blue-500"></div>
+        </div>
+    </header>
+
+    <!------- Conteúdo Principal ------->
+    <main class="w-full max-w-6xl mx-auto px-6 py-10">
+
+        <h1 class="text-3xl font-bold mb-2">Explorar</h1>
+        <p class="text-gray-400 mb-8">Pesquisa um filme, filtra por género e escolhe como ordenar.</p>
+
+        <!-- Filtros -->
+        <form id="filtros" role="search" class="flex flex-col sm:flex-row gap-4 mb-10" onsubmit="return false">
+            <div class="flex-1">
+                <label for="pesquisa" class="block text-sm text-gray-300 mb-1">Pesquisar</label>
+                <input type="search" id="pesquisa" name="pesquisa" placeholder="Ex.: Interstellar"
+                    autocomplete="off"
+                    class="w-full p-2 rounded bg-slate-900 border border-gray-700 focus:border-blue-500 focus:outline-none">
+            </div>
+            <div class="sm:w-60">
+                <label for="genero" class="block text-sm text-gray-300 mb-1">Género</label>
+                <select id="genero" name="genero"
+                    class="w-full p-2 rounded bg-slate-900 border border-gray-700 focus:border-blue-500 focus:outline-none">
+                    <option value="">Todos</option>
+                </select>
+            </div>
+            <div class="sm:w-60">
+                <label for="ordem" class="block text-sm text-gray-300 mb-1">Ordenar por</label>
+                <select id="ordem" name="ordem"
+                    class="w-full p-2 rounded bg-slate-900 border border-gray-700 focus:border-blue-500 focus:outline-none">
+                    <!-- Só fica disponível quando há uma pesquisa ativa -->
+                    <option value="relevancia" id="opcao-relevancia" disabled>Relevância (pesquisa)</option>
+                    <option value="popularity.desc">Mais populares</option>
+                    <option value="vote_average.desc">Melhor avaliados</option>
+                    <option value="primary_release_date.desc">Mais recentes</option>
+                    <option value="primary_release_date.asc">Mais antigos</option>
+                    <option value="title.asc">Título (A-Z)</option>
+                </select>
+            </div>
+        </form>
+
+        <!-- Estado (resultados / erros) -->
+        <p id="estado" class="text-gray-400 mb-4" aria-live="polite"></p>
+
+        <!-- Grelha de cartazes: 2 colunas no telemóvel, 3 no tablet, 4 e 5 em ecrãs maiores -->
+        <section id="grelha" aria-label="Resultados"
+            class="grid gap-6 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+        </section>
+
+        <!-- Carregar mais -->
+        <div class="text-center mt-10">
+            <button id="btn-mais" type="button" hidden
+                class="px-6 py-2 rounded bg-blue-700 hover:bg-blue-600 transition-colors">
+                Carregar mais
+            </button>
+        </div>
+    </main>
+
+    <!------- Rodapé ------->
+    <footer class="border-t border-gray-800 p-6 text-center text-sm text-gray-500">
+        <p>Projeto escolar · CineStream · Dados fornecidos por TMDB</p>
+    </footer>
+
+    <script>
+        const apiKey = '053d489831c6eefd525cc9bc4ba2bb19';
+        const base = 'https://api.themoviedb.org/3';
+
+        const campoPesquisa = document.getElementById('pesquisa');
+        const selectGenero = document.getElementById('genero');
+        const selectOrdem = document.getElementById('ordem');
+        const opcaoRelevancia = document.getElementById('opcao-relevancia');
+        const grelha = document.getElementById('grelha');
+        const estado = document.getElementById('estado');
+        const btnMais = document.getElementById('btn-mais');
+
+        let pagina = 1;
+        let totalPaginas = 1;
+        let temporizador;
+        let pedidoAtual = 0;        // identifica o último pedido, para ignorar respostas antigas
+        let filmesPesquisa = [];    // resultados acumulados da pesquisa (género e ordem aplicam-se aqui)
+        let estavaAPesquisar = false;
+
+        // ---------- Minha Lista (localStorage) ----------
+        // Fica guardada com a chave "minhaLista" para a página minhalista.html ler.
+        function lerLista() {
+            try {
+                return JSON.parse(localStorage.getItem('minhaLista')) || [];
+            } catch (e) {
+                return [];
+            }
+        }
+
+        function guardarLista(lista) {
+            localStorage.setItem('minhaLista', JSON.stringify(lista));
+        }
+
+        function estaNaLista(id) {
+            return lerLista().some(f => f.id === id);
+        }
+
+        function alternarLista(filme) {
+            let lista = lerLista();
+            if (lista.some(f => f.id === filme.id)) {
+                lista = lista.filter(f => f.id !== filme.id);
+            } else {
+                lista.push(filme);
+            }
+            guardarLista(lista);
+        }
+
+        // ---------- Utilitários ----------
+        function escapar(texto) {
+            const div = document.createElement('div');
+            div.textContent = texto;
+            return div.innerHTML.replace(/"/g, '&quot;');
+        }
+
+        function textoBotao(naLista) {
+            return naLista ? '✓ Na lista' : '+ Minha Lista';
+        }
+
+        // ---------- Cartões ----------
+        function criarCartao(filme) {
+            const ano = filme.release_date ? filme.release_date.split('-')[0] : 'N/A';
+            const nota = filme.vote_average ? filme.vote_average.toFixed(1) : '–';
+            const titulo = escapar(filme.title);
+            const naLista = estaNaLista(filme.id);
+
+            // Dados mínimos guardados na lista
+            const dados = escapar(JSON.stringify({
+                id: filme.id,
+                title: filme.title,
+                poster_path: filme.poster_path,
+                vote_average: filme.vote_average,
+                release_date: filme.release_date
+            }));
+
+            return `
+                <article class="flex flex-col">
+                    <div class="transition-transform hover:scale-105">
+                        <img src="https://image.tmdb.org/t/p/w500${filme.poster_path}"
+                            alt="Cartaz do filme ${titulo}"
+                            loading="lazy"
+                            class="w-full h-auto rounded-lg shadow-md border border-gray-800 aspect-[2/3] object-cover bg-slate-900">
+                    </div>
+                    <h2 class="mt-2 text-sm text-gray-200 font-medium truncate" title="${titulo}">${titulo}</h2>
+                    <p class="text-xs text-gray-400 mb-2">
+                        <span class="text-yellow-400 font-semibold">⭐ ${nota}</span> • ${ano}
+                    </p>
+                    <button type="button" data-filme="${dados}"
+                        class="btn-lista mt-auto text-xs py-1 rounded border border-blue-500 hover:bg-blue-900 transition-colors">
+                        ${textoBotao(naLista)}
+                    </button>
+                </article>
+            `;
+        }
+
+        // ---------- Pedidos à API ----------
+        function aPesquisar() {
+            return campoPesquisa.value.trim() !== '';
+        }
+
+        function montarUrl() {
+            // Com pesquisa usamos /search/movie. Essa rota não aceita género nem ordem,
+            // por isso estes dois filtros são aplicados depois, no cliente.
+            if (aPesquisar()) {
+                return `${base}/search/movie?api_key=${apiKey}&language=pt-PT&query=${encodeURIComponent(campoPesquisa.value.trim())}&page=${pagina}`;
+            }
+
+            const genero = selectGenero.value;
+            const ordem = selectOrdem.value;
+            const hoje = new Date().toISOString().split('T')[0];
+
+            let url = `${base}/discover/movie?api_key=${apiKey}&language=pt-PT&sort_by=${ordem}&page=${pagina}`;
+            if (genero) url += `&with_genres=${genero}`;
+
+            // Evitar filmes ainda não estreados nas ordenações por data
+            if (ordem.startsWith('primary_release_date')) {
+                url += `&primary_release_date.lte=${hoje}`;
+            }
+            // Evitar filmes com 1 ou 2 votos no topo dos "melhor avaliados"
+            if (ordem === 'vote_average.desc') {
+                url += '&vote_count.gte=300';
+            }
+            return url;
+        }
+
+        // Ordenação feita no cliente (só para resultados de pesquisa)
+        function ordenarPesquisa(filmes, ordem) {
+            const lista = [...filmes];
+            const data = f => f.release_date || '';
+
+            switch (ordem) {
+                case 'popularity.desc':
+                    return lista.sort((a, b) => b.popularity - a.popularity);
+                case 'vote_average.desc':
+                    return lista.sort((a, b) => b.vote_average - a.vote_average);
+                case 'primary_release_date.desc':
+                    return lista.sort((a, b) => data(b).localeCompare(data(a)));
+                case 'primary_release_date.asc':
+                    // Filmes sem data ficam no fim
+                    return lista.sort((a, b) => (data(a) || '9999').localeCompare(data(b) || '9999'));
+                case 'title.asc':
+                    return lista.sort((a, b) => a.title.localeCompare(b.title, 'pt'));
+                default:
+                    return lista; // "relevancia": mantém a ordem do TMDB
+            }
+        }
+
+        // Mostra os resultados da pesquisa aplicando género e ordem
+        function mostrarPesquisa() {
+            const generoEscolhido = Number(selectGenero.value);
+
+            let filmes = filmesPesquisa;
+            if (generoEscolhido) {
+                filmes = filmes.filter(f => f.genre_ids.includes(generoEscolhido));
+            }
+            filmes = ordenarPesquisa(filmes, selectOrdem.value);
+
+            grelha.innerHTML = filmes.map(criarCartao).join('');
+
+            if (filmes.length > 0) {
+                estado.textContent = `Resultados para "${campoPesquisa.value.trim()}"`;
+            } else if (pagina < totalPaginas) {
+                estado.textContent = 'Nenhum filme com estes filtros nos resultados já carregados. Experimenta "Carregar mais".';
+            } else {
+                estado.textContent = 'Não foram encontrados filmes.';
+            }
+
+            btnMais.hidden = pagina >= totalPaginas;
+        }
+
+        function carregarFilmes(limpar) {
+            if (limpar) {
+                pagina = 1;
+                grelha.innerHTML = '';
+                filmesPesquisa = [];
+            }
+
+            const numeroPedido = ++pedidoAtual;
+            estado.textContent = 'A carregar...';
+            btnMais.hidden = true;
+
+            fetch(montarUrl())
+                .then(resposta => {
+                    if (!resposta.ok) throw new Error('Resposta inválida: ' + resposta.status);
+                    return resposta.json();
+                })
+                .then(dados => {
+                    // Se entretanto foi feito outro pedido, esta resposta já não interessa
+                    if (numeroPedido !== pedidoAtual) return;
+
+                    totalPaginas = dados.total_pages;
+                    const filmes = dados.results.filter(f => f.poster_path);
+
+                    if (aPesquisar()) {
+                        filmesPesquisa.push(...filmes);
+                        mostrarPesquisa();
+                        return;
+                    }
+
+                    // Montar tudo de uma vez (em vez de innerHTML += dentro do ciclo)
+                    grelha.insertAdjacentHTML('beforeend', filmes.map(criarCartao).join(''));
+
+                    if (grelha.children.length === 0) {
+                        estado.textContent = 'Não foram encontrados filmes.';
+                    } else {
+                        estado.textContent = '';
+                    }
+
+                    btnMais.hidden = pagina >= totalPaginas;
+                })
+                .catch(erro => {
+                    if (numeroPedido !== pedidoAtual) return;
+                    console.error('Erro ao carregar filmes:', erro);
+                    estado.textContent = 'Ocorreu um erro ao carregar os filmes. Tenta novamente.';
+                });
+        }
+
+        // "Relevância" só faz sentido com pesquisa: ativa-se ao pesquisar e desativa-se ao limpar
+        function sincronizarOrdem() {
+            const pesquisando = aPesquisar();
+            opcaoRelevancia.disabled = !pesquisando;
+
+            if (pesquisando && !estavaAPesquisar) {
+                selectOrdem.value = 'relevancia';
+            } else if (!pesquisando && selectOrdem.value === 'relevancia') {
+                selectOrdem.value = 'popularity.desc';
+            }
+            estavaAPesquisar = pesquisando;
+        }
+
+        // Género e ordem: com pesquisa só reorganizam o que já está carregado
+        function aoMudarFiltros() {
+            if (aPesquisar()) {
+                mostrarPesquisa();
+            } else {
+                carregarFilmes(true);
+            }
+        }
+
+        function carregarGeneros() {
+            fetch(`${base}/genre/movie/list?api_key=${apiKey}&language=pt-PT`)
+                .then(resposta => resposta.json())
+                .then(dados => {
+                    selectGenero.insertAdjacentHTML('beforeend',
+                        dados.genres.map(g => `<option value="${g.id}">${escapar(g.name)}</option>`).join(''));
+                })
+                .catch(erro => console.error('Erro ao carregar géneros:', erro));
+        }
+
+        // ---------- Eventos ----------
+        // Pesquisa com pequeno atraso para não fazer um pedido por cada letra
+        campoPesquisa.addEventListener('input', () => {
+            clearTimeout(temporizador);
+            temporizador = setTimeout(() => {
+                sincronizarOrdem();
+                carregarFilmes(true);
+            }, 400);
+        });
+
+        selectGenero.addEventListener('change', aoMudarFiltros);
+        selectOrdem.addEventListener('change', aoMudarFiltros);
+
+        btnMais.addEventListener('click', () => {
+            pagina++;
+            carregarFilmes(false);
+        });
+
+        // Delegação de eventos: um só "click" trata todos os botões da grelha
+        grelha.addEventListener('click', evento => {
+            const botao = evento.target.closest('.btn-lista');
+            if (!botao) return;
+
+            const filme = JSON.parse(botao.dataset.filme);
+            alternarLista(filme);
+            botao.textContent = textoBotao(estaNaLista(filme.id));
+        });
+
+        // ---------- Início ----------
+        carregarGeneros();
+        carregarFilmes(true);
+    </script>
+</body>
+</html>

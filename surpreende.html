@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="pt-PT">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <title>Surpreende-me | CineStream</title>
+</head>
+<body class="bg-slate-950 text-white min-h-screen">
+
+    <!------- Cabeçalho ------->
+    <header class="flex flex-wrap items-center justify-between gap-y-3 p-4 sm:p-6 bg-transparent border-b border-gray-800">
+        <a href="paginaprincipal.html" class="text-xl sm:text-2xl font-bold">CineStream</a>
+        <!-- No telemóvel o menu passa para uma segunda linha (order-last + w-full) -->
+        <nav aria-label="Navegação principal" class="order-last w-full sm:order-0 sm:w-auto">
+            <ul class="flex justify-around sm:justify-start sm:gap-8 text-sm">
+                <li><a href="explorar.html" class="block py-1 hover:text-gray-400">Explorar</a></li>
+                <li><a href="surpreende.html" aria-current="page" class="block py-1 text-blue-400 font-semibold">Surpreende-me</a></li>
+                <li><a href="minhalista.html" class="block py-1 hover:text-gray-400">Minha Lista</a></li>
+            </ul>
+        </nav>
+        <div class="flex gap-4 items-center">
+            <div class="w-8 h-8 bg-blue-900 rounded border border-blue-500"></div>
+        </div>
+    </header>
+
+    <main class="w-full max-w-5xl mx-auto px-6 py-10">
+
+        <h1 class="text-3xl font-bold mb-2 text-center">Surpreende-me</h1>
+        <p class="text-gray-400 mb-8 text-center">Não sabes o que ver? Deixa-nos escolher por ti.</p>
+
+        <!-- Filtros (opcionais) -->
+        <form id="filtros" class="flex flex-col sm:flex-row gap-4 justify-center mb-6" onsubmit="return false">
+            <div class="sm:w-56">
+                <label for="genero" class="block text-sm text-gray-300 mb-1">Género</label>
+                <select id="genero" name="genero"
+                    class="w-full p-2 rounded bg-slate-900 border border-gray-700 focus:border-blue-500 focus:outline-none">
+                    <option value="">Qualquer</option>
+                </select>
+            </div>
+            <div class="sm:w-56">
+                <label for="nota" class="block text-sm text-gray-300 mb-1">Nota mínima</label>
+                <select id="nota" name="nota"
+                    class="w-full p-2 rounded bg-slate-900 border border-gray-700 focus:border-blue-500 focus:outline-none">
+                    <option value="">Qualquer</option>
+                    <option value="6">6 ou mais</option>
+                    <option value="7">7 ou mais</option>
+                    <option value="8">8 ou mais</option>
+                </select>
+            </div>
+        </form>
+
+        <div class="text-center mb-10">
+            <button id="btn-surpreender" type="button"
+                class="px-8 py-3 rounded-lg bg-blue-700 hover:bg-blue-600 transition-colors text-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed">
+                🎲 Surpreende-me!
+            </button>
+        </div>
+
+        <!-- Estado (a carregar / erros) -->
+        <p id="estado" class="text-center text-gray-400 mb-6" aria-live="polite"></p>
+
+        <!-- Resultado (preenchido pelo JavaScript) -->
+        <section id="resultado" aria-label="Filme sugerido"></section>
+    </main>
+
+    <!------- Rodapé ------->
+    <footer class="border-t border-gray-800 p-6 text-center text-sm text-gray-500">
+        <p>Projeto escolar · CineStream · Dados fornecidos por TMDB</p>
+    </footer>
+
+    <script>
+        const apiKey = '053d489831c6eefd525cc9bc4ba2bb19';
+        const base = 'https://api.themoviedb.org/3';
+        const imgBase = 'https://image.tmdb.org/t/p';
+
+        const selectGenero = document.getElementById('genero');
+        const selectNota = document.getElementById('nota');
+        const btnSurpreender = document.getElementById('btn-surpreender');
+        const estado = document.getElementById('estado');
+        const resultado = document.getElementById('resultado');
+
+        let ultimoId = null; // para não repetir o mesmo filme duas vezes seguidas
+
+        // ---------- Utilitários ----------
+        function escapar(texto) {
+            const div = document.createElement('div');
+            div.textContent = texto;
+            return div.innerHTML.replace(/"/g, '&quot;');
+        }
+
+        function pedir(url) {
+            return fetch(url).then(resposta => {
+                if (!resposta.ok) throw new Error('Resposta inválida: ' + resposta.status);
+                return resposta.json();
+            });
+        }
+
+        function formatarDuracao(minutos) {
+            if (!minutos) return null;
+            const h = Math.floor(minutos / 60);
+            const m = minutos % 60;
+            return h > 0 ? `${h}h ${m}min` : `${m}min`;
+        }
+
+        // ---------- Minha Lista (localStorage) ----------
+        // Mesma chave usada nas outras páginas: "minhaLista"
+        function lerLista() {
+            try {
+                return JSON.parse(localStorage.getItem('minhaLista')) || [];
+            } catch (e) {
+                return [];
+            }
+        }
+
+        function estaNaLista(id) {
+            return lerLista().some(f => f.id === id);
+        }
+
+        function alternarLista(filme) {
+            let lista = lerLista();
+            if (lista.some(f => f.id === filme.id)) {
+                lista = lista.filter(f => f.id !== filme.id);
+            } else {
+                lista.push(filme);
+            }
+            localStorage.setItem('minhaLista', JSON.stringify(lista));
+        }
+
+        function textoBotao(naLista) {
+            return naLista ? '✓ Na lista' : '+ Minha Lista';
+        }
+
+        // ---------- Escolher um filme ao acaso ----------
+        function montarUrl(pagina) {
+            let url = `${base}/discover/movie?api_key=${apiKey}&language=pt-PT&sort_by=popularity.desc&vote_count.gte=300&page=${pagina}`;
+            if (selectGenero.value) url += `&with_genres=${selectGenero.value}`;
+            if (selectNota.value) url += `&vote_average.gte=${selectNota.value}`;
+            return url;
+        }
+
+        function aceitaveis(filmes) {
+            return filmes.filter(f => f.poster_path && f.id !== ultimoId);
+        }
+
+        async function escolherFilme() {
+            // Página aleatória entre 1 e 20 (cada página tem 20 filmes)
+            const pagina = Math.floor(Math.random() * 20) + 1;
+            let dados = await pedir(montarUrl(pagina));
+            let filmes = aceitaveis(dados.results);
+
+            // Se os filtros deixarem poucos filmes, essa página pode vir vazia: voltamos à primeira
+            if (filmes.length === 0 && pagina !== 1) {
+                dados = await pedir(montarUrl(1));
+                filmes = aceitaveis(dados.results);
+            }
+
+            if (filmes.length === 0) return null;
+            return filmes[Math.floor(Math.random() * filmes.length)];
+        }
+
+        // ---------- Mostrar o filme ----------
+        function mostrarFilme(filme) {
+            const titulo = escapar(filme.title);
+            const ano = filme.release_date ? filme.release_date.split('-')[0] : 'N/A';
+            const nota = filme.vote_average ? filme.vote_average.toFixed(1) : '–';
+            const duracao = formatarDuracao(filme.runtime);
+            const sinopse = filme.overview
+                ? escapar(filme.overview)
+                : 'Sem sinopse disponível em português.';
+
+            const generos = filme.genres.map(g =>
+                `<span class="text-xs px-2 py-1 rounded-full border border-gray-600 text-gray-300">${escapar(g.name)}</span>`
+            ).join('');
+
+            // Primeiro trailer do YouTube, se existir
+            const trailer = filme.videos.results.find(v => v.site === 'YouTube' && v.type === 'Trailer');
+            const linkTrailer = trailer
+                ? `<a href="https://www.youtube.com/watch?v=${trailer.key}" target="_blank" rel="noopener"
+                        class="px-4 py-2 rounded border border-gray-600 hover:bg-slate-800 transition-colors text-sm">▶ Ver trailer ↗</a>`
+                : '';
+
+            const dados = escapar(JSON.stringify({
+                id: filme.id,
+                title: filme.title,
+                poster_path: filme.poster_path,
+                vote_average: filme.vote_average,
+                release_date: filme.release_date
+            }));
+
+            resultado.innerHTML = `
+                <article class="flex flex-col md:flex-row gap-8 bg-slate-900 border border-gray-800 rounded-xl p-6">
+                    <img src="${imgBase}/w500${filme.poster_path}" alt="Cartaz do filme ${titulo}"
+                        class="w-48 md:w-64 mx-auto md:mx-0 self-start rounded-lg shadow-lg border border-gray-700">
+
+                    <div class="flex-1">
+                        <h2 class="text-2xl md:text-3xl font-bold">${titulo}</h2>
+                        ${filme.tagline ? `<p class="italic text-gray-400 mt-1">${escapar(filme.tagline)}</p>` : ''}
+
+                        <p class="flex flex-wrap items-center gap-3 mt-3 text-sm text-gray-300">
+                            <span class="font-semibold text-yellow-400">⭐ ${nota}</span>
+                            <span>•</span>
+                            <span>${ano}</span>
+                            ${duracao ? `<span>•</span><span>${duracao}</span>` : ''}
+                        </p>
+
+                        <div class="flex flex-wrap gap-2 mt-4">${generos}</div>
+
+                        <h3 class="mt-6 mb-1 font-semibold">Sinopse</h3>
+                        <p class="text-gray-300 leading-relaxed">${sinopse}</p>
+
+                        <div class="flex flex-wrap gap-3 mt-6">
+                            <button type="button" data-filme="${dados}"
+                                class="btn-lista px-4 py-2 rounded border border-blue-500 hover:bg-blue-900 transition-colors text-sm">
+                                ${textoBotao(estaNaLista(filme.id))}
+                            </button>
+                            ${linkTrailer}
+                        </div>
+                    </div>
+                </article>
+            `;
+        }
+
+        // ---------- Botão principal ----------
+        async function surpreender() {
+            btnSurpreender.disabled = true;
+            estado.textContent = 'A escolher um filme para ti...';
+
+            try {
+                const escolhido = await escolherFilme();
+
+                if (!escolhido) {
+                    resultado.innerHTML = '';
+                    estado.textContent = 'Nenhum filme encontrado com estes filtros. Tenta outra combinação.';
+                    return;
+                }
+
+                // Detalhes completos (duração, géneros, sinopse, trailer)
+                const detalhes = await pedir(
+                    `${base}/movie/${escolhido.id}?api_key=${apiKey}&language=pt-PT&append_to_response=videos&include_video_language=pt,en`
+                );
+
+                ultimoId = detalhes.id;
+                mostrarFilme(detalhes);
+                estado.textContent = '';
+                btnSurpreender.textContent = '🎲 Outro filme!';
+            } catch (erro) {
+                console.error('Erro ao escolher filme:', erro);
+                estado.textContent = 'Ocorreu um erro ao carregar o filme. Tenta novamente.';
+            } finally {
+                btnSurpreender.disabled = false;
+            }
+        }
+
+        // ---------- Eventos ----------
+        btnSurpreender.addEventListener('click', surpreender);
+
+        resultado.addEventListener('click', evento => {
+            const botao = evento.target.closest('.btn-lista');
+            if (!botao) return;
+
+            const filme = JSON.parse(botao.dataset.filme);
+            alternarLista(filme);
+            botao.textContent = textoBotao(estaNaLista(filme.id));
+        });
+
+        // ---------- Início ----------
+        pedir(`${base}/genre/movie/list?api_key=${apiKey}&language=pt-PT`)
+            .then(dados => {
+                selectGenero.insertAdjacentHTML('beforeend',
+                    dados.genres.map(g => `<option value="${g.id}">${escapar(g.name)}</option>`).join(''));
+            })
+            .catch(erro => console.error('Erro ao carregar géneros:', erro));
+    </script>
+
+</body>
+</html>

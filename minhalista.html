@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="pt-PT">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <title>Minha Lista | CineStream</title>
+</head>
+<body class="bg-slate-950 text-white min-h-screen">
+
+    <!------- Cabeçalho ------->
+    <header class="flex flex-wrap items-center justify-between gap-y-3 p-4 sm:p-6 bg-transparent border-b border-gray-800">
+        <a href="paginaprincipal.html" class="text-xl sm:text-2xl font-bold">CineStream</a>
+        <!-- No telemóvel o menu passa para uma segunda linha (order-last + w-full) -->
+        <nav aria-label="Navegação principal" class="order-last w-full sm:order-0 sm:w-auto">
+            <ul class="flex justify-around sm:justify-start sm:gap-8 text-sm">
+                <li><a href="explorar.html" class="block py-1 hover:text-gray-400">Explorar</a></li>
+                <li><a href="surpreende.html" class="block py-1 hover:text-gray-400">Surpreende-me</a></li>
+                <li><a href="minhalista.html" aria-current="page" class="block py-1 text-blue-400 font-semibold">Minha Lista</a></li>
+            </ul>
+        </nav>
+        <div class="flex gap-4 items-center">
+            <div class="w-8 h-8 bg-blue-900 rounded border border-blue-500"></div>
+        </div>
+    </header>
+
+    <main class="w-full max-w-6xl mx-auto px-6 py-10">
+
+        <div class="flex flex-wrap items-end justify-between gap-4 mb-8">
+            <div>
+                <h1 class="text-3xl font-bold mb-1">Minha Lista</h1>
+                <p id="contador" class="text-gray-400" aria-live="polite"></p>
+            </div>
+            <button id="btn-limpar" type="button" hidden
+                class="text-sm px-4 py-2 rounded border border-red-500 text-red-400 hover:bg-red-950 transition-colors">
+                Limpar lista
+            </button>
+        </div>
+
+        <!-- Mensagem quando a lista está vazia -->
+        <div id="vazio" hidden class="text-center py-16">
+            <p class="text-xl mb-2">A tua lista está vazia.</p>
+            <p class="text-gray-400 mb-6">Guarda filmes com o botão "+ Minha Lista" para os veres aqui.</p>
+            <a href="explorar.html" class="inline-block px-6 py-2 rounded bg-blue-700 hover:bg-blue-600 transition-colors">Explorar filmes</a>
+        </div>
+
+        <!-- Grelha de cartazes -->
+        <section id="grelha" aria-label="Filmes guardados"
+            class="grid gap-6 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+        </section>
+    </main>
+
+    <!------- Rodapé ------->
+    <footer class="border-t border-gray-800 p-6 text-center text-sm text-gray-500">
+        <p>Projeto escolar · CineStream · Dados fornecidos por TMDB</p>
+    </footer>
+
+    <script>
+        const grelha = document.getElementById('grelha');
+        const contador = document.getElementById('contador');
+        const vazio = document.getElementById('vazio');
+        const btnLimpar = document.getElementById('btn-limpar');
+
+        // ---------- Utilitários ----------
+        function escapar(texto) {
+            const div = document.createElement('div');
+            div.textContent = texto;
+            return div.innerHTML.replace(/"/g, '&quot;');
+        }
+
+        // ---------- Minha Lista (localStorage) ----------
+        // Mesma chave usada nas outras páginas: "minhaLista"
+        function lerLista() {
+            try {
+                return JSON.parse(localStorage.getItem('minhaLista')) || [];
+            } catch (e) {
+                return [];
+            }
+        }
+
+        function guardarLista(lista) {
+            localStorage.setItem('minhaLista', JSON.stringify(lista));
+        }
+
+        // ---------- Mostrar a lista ----------
+        function criarCartao(filme) {
+            const titulo = escapar(filme.title);
+            const ano = filme.release_date ? filme.release_date.split('-')[0] : 'N/A';
+            const nota = filme.vote_average ? filme.vote_average.toFixed(1) : '–';
+
+            return `
+                <article class="flex flex-col">
+                    <div class="relative transition-transform hover:scale-105">
+                        <img src="https://image.tmdb.org/t/p/w500${filme.poster_path}"
+                            alt="Cartaz do filme ${titulo}" loading="lazy"
+                            class="w-full h-auto rounded-lg shadow-md border border-gray-800 aspect-[2/3] object-cover bg-slate-900">
+                        <span class="absolute top-2 right-2 bg-black/70 text-yellow-400 text-xs font-semibold px-2 py-1 rounded">⭐ ${nota}</span>
+                    </div>
+                    <h2 class="mt-2 text-sm text-gray-200 font-medium truncate" title="${titulo}">${titulo}</h2>
+                    <p class="text-xs text-gray-400 mb-2">${ano}</p>
+                    <button type="button" data-id="${filme.id}"
+                        class="btn-remover mt-auto text-xs py-1 rounded border border-red-500 text-red-400 hover:bg-red-950 transition-colors">
+                        Remover
+                    </button>
+                </article>
+            `;
+        }
+
+        function mostrarLista() {
+            // Ignora entradas inválidas (sem id ou sem cartaz)
+            const lista = lerLista().filter(f => f && f.id && f.poster_path);
+
+            grelha.innerHTML = lista.map(criarCartao).join('');
+
+            const vazia = lista.length === 0;
+            vazio.hidden = !vazia;
+            btnLimpar.hidden = vazia;
+            contador.textContent = vazia
+                ? ''
+                : (lista.length === 1 ? '1 filme guardado' : `${lista.length} filmes guardados`);
+        }
+
+        // ---------- Eventos ----------
+        // Delegação de eventos: um só "click" trata todos os botões "Remover"
+        grelha.addEventListener('click', evento => {
+            const botao = evento.target.closest('.btn-remover');
+            if (!botao) return;
+
+            const id = Number(botao.dataset.id);
+            guardarLista(lerLista().filter(f => f.id !== id));
+            mostrarLista();
+        });
+
+        btnLimpar.addEventListener('click', () => {
+            if (confirm('Queres mesmo remover todos os filmes da lista?')) {
+                guardarLista([]);
+                mostrarLista();
+            }
+        });
+
+        // Se a lista mudar noutro separador, atualiza esta página
+        window.addEventListener('storage', mostrarLista);
+
+        // ---------- Início ----------
+        mostrarLista();
+    </script>
+
+</body>
+</html>
